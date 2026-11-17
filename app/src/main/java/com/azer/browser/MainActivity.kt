@@ -1,148 +1,222 @@
-
 package com.azer.browser
 
 import android.app.Activity
 import android.os.Bundle
-import android.webkit.*
-import android.widget.*
-import android.view.ViewGroup
-import android.graphics.Color
-import android.app.DownloadManager
-import android.net.Uri
-import android.os.Environment
+import android.view.View
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import com.azer.browser.ui.BookmarkScreen
+import com.azer.browser.ui.BrowserBottomBar
+import com.azer.browser.ui.BrowserTheme
+import com.azer.browser.ui.BrowserToolbar
+import com.azer.browser.ui.DownloadScreen
+import com.azer.browser.ui.HistoryScreen
+import com.azer.browser.ui.HomeScreen
+import com.azer.browser.ui.SettingsScreen
+import com.azer.browser.ui.TabScreen
 
 class MainActivity : Activity() {
 
+    private lateinit var root: LinearLayout
+    private lateinit var content: LinearLayout
     private lateinit var webView: WebView
-    private lateinit var addressBar: EditText
-    private lateinit var downloadManager: DownloadManager
+
+    private var tabCount = 1
+    private var isBrowsing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        downloadManager =
-            getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-
-        val root = LinearLayout(this)
+        root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
+        root.setBackgroundColor(BrowserTheme.background)
 
-        addressBar = EditText(this)
-        addressBar.hint = "Adres veya arama yaz"
-        addressBar.singleLine = true
-
-        val buttons = LinearLayout(this)
-        buttons.orientation = LinearLayout.HORIZONTAL
-
-        fun addButton(name: String, action: () -> Unit) {
-            val button = Button(this)
-            button.text = name
-            button.setOnClickListener { action() }
-            buttons.addView(
-                button,
-                LinearLayout.LayoutParams(0, 55, 1f)
-            )
-        }
-
-        addButton("Geri") {
-            if (webView.canGoBack()) webView.goBack()
-        }
-
-        addButton("İleri") {
-            if (webView.canGoForward()) webView.goForward()
-        }
-
-        addButton("Yenile") {
-            webView.reload()
-        }
-
-        addButton("Ana sayfa") {
-            webView.loadUrl("https://www.google.com")
-        }
+        content = LinearLayout(this)
+        content.orientation = LinearLayout.VERTICAL
 
         webView = WebView(this)
-
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        webView.settings.loadsImagesAutomatically = true
-
         webView.webViewClient = WebViewClient()
 
-        webView.webChromeClient = WebChromeClient()
+        showHome()
+        setContentView(root)
+    }
 
-        webView.setDownloadListener {
-                url, userAgent, contentDisposition,
-                mimeType, contentLength ->
+    private fun setupLayout() {
+        root.removeAllViews()
 
-            val request = DownloadManager.Request(Uri.parse(url))
-            request.setMimeType(mimeType)
-            request.addRequestHeader("User-Agent", userAgent)
-            request.setTitle(
-                URLUtil.guessFileName(
-                    url,
-                    contentDisposition,
-                    mimeType
-                )
-            )
-            request.setNotificationVisibility(
-                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-            )
-            request.setDestinationInExternalPublicDir(
-                Environment.DIRECTORY_DOWNLOADS,
-                URLUtil.guessFileName(
-                    url,
-                    contentDisposition,
-                    mimeType
-                )
-            )
+        val toolbar = BrowserToolbar.create(
+            this,
+            onSearch = { address -> openAddress(address) },
+            onHome = { showHome() }
+        )
 
-            downloadManager.enqueue(request)
+        val bottomBar = BrowserBottomBar.create(
+            this
+        ) { selected ->
+            when (selected) {
+                "Ana Sayfa" -> showHome()
+                "İndirilenler" -> showDownloads()
+                "Sekmeler" -> showTabs()
+                "Yer İmleri" -> showBookmarks()
+                "Geçmiş" -> showHistory()
+                "Ayarlar" -> showSettings()
+            }
         }
-
-        val go = Button(this)
-        go.text = "Git"
-        go.setOnClickListener {
-            openWebsite(addressBar.text.toString())
-        }
-
-        root.addView(addressBar)
-        root.addView(go)
-        root.addView(buttons)
 
         root.addView(
-            webView,
+            toolbar,
             LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                58
+            )
+        )
+
+        root.addView(
+            content,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
                 1f
             )
         )
 
-        setContentView(root)
-
-        webView.loadUrl("https://www.google.com")
+        root.addView(
+            bottomBar,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                58
+            )
+        )
     }
 
-    private fun openWebsite(input: String) {
-        val url = if (
-            input.startsWith("https://") ||
-            input.startsWith("http://")
-        ) {
-            input
-        } else if (input.contains(".") && !input.contains(" ")) {
-            "https://$input"
-        } else {
-            "https://www.google.com/search?q=" +
-                Uri.encode(input)
+    private fun showContent(view: View) {
+        content.removeAllViews()
+        content.addView(
+            view,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        setupLayout()
+    }
+
+    private fun showHome() {
+        isBrowsing = false
+        showContent(
+            HomeScreen.create(this) { address ->
+                openAddress(address)
+            }
+        )
+    }
+
+    private fun showDownloads() {
+        isBrowsing = false
+        showContent(DownloadScreen.create(this))
+    }
+
+    private fun showTabs() {
+        isBrowsing = false
+        showContent(
+            TabScreen.create(
+                this,
+                tabCount,
+                onNewTab = {
+                    tabCount++
+                    showHome()
+                    Toast.makeText(
+                        this,
+                        "Yeni sekme oluşturuldu.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                onPrivateTab = {
+                    Toast.makeText(
+                        this,
+                        "Gizli sekme sonraki aşamada geliştirilecek.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            )
+        )
+    }
+
+    private fun showBookmarks() {
+        isBrowsing = false
+        showContent(BookmarkScreen.create(this))
+    }
+
+    private fun showHistory() {
+        isBrowsing = false
+        showContent(HistoryScreen.create(this))
+    }
+
+    private fun showSettings() {
+        isBrowsing = false
+        showContent(SettingsScreen.create(this))
+    }
+
+    private fun openAddress(input: String) {
+        val value = input.trim()
+
+        if (value.isEmpty()) {
+            Toast.makeText(
+                this,
+                "Adres gir.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
         }
 
+        val url = if (
+            value.startsWith("http://") ||
+            value.startsWith("https://")
+        ) {
+            value
+        } else if (value.contains(".") && !value.contains(" ")) {
+            "https://$value"
+        } else {
+            "https://www.google.com/search?q=" +
+                android.net.Uri.encode(value)
+        }
+
+        isBrowsing = true
+
         webView.loadUrl(url)
+        showContent(webView)
+
+        val preferences = getSharedPreferences(
+            "azer_history",
+            MODE_PRIVATE
+        )
+
+        val oldItems = preferences.getStringSet(
+            "items",
+            emptySet()
+        )?.toMutableSet() ?: mutableSetOf()
+
+        oldItems.add(url)
+
+        preferences.edit()
+            .putStringSet("items", oldItems)
+            .apply()
     }
 
     override fun onBackPressed() {
-        if (::webView.isInitialized && webView.canGoBack()) {
+        if (isBrowsing && webView.canGoBack()) {
             webView.goBack()
         } else {
-            super.onBackPressed()
+            showHome()
         }
+    }
+
+    override fun onDestroy() {
+        webView.destroy()
+        super.onDestroy()
     }
 }
