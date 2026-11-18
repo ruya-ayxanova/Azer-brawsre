@@ -18,9 +18,12 @@ object BrowserTabCardView {
         val card = LinearLayout(context)
         card.orientation = LinearLayout.VERTICAL
         card.setPadding(16, 12, 16, 12)
+
         card.setBackgroundColor(
-            if (entry.isActive) Color.rgb(0, 90, 80)
-            else Color.rgb(35, 45, 55)
+            if (entry.isActive)
+                Color.rgb(0, 90, 80)
+            else
+                Color.rgb(35, 45, 55)
         )
 
         val title = TextView(context)
@@ -29,23 +32,25 @@ object BrowserTabCardView {
         } else {
             entry.title
         }
+
         title.textSize = 17f
         title.setTextColor(Color.WHITE)
 
         val url = TextView(context)
         url.text = entry.url
         url.textSize = 12f
-        url.setTextColor(Color.LTGRAY
-
-)
+        url.setTextColor(Color.LTGRAY)
         url.maxLines = 2
 
         val buttons = LinearLayout(context)
+        buttons.orientation = LinearLayout.HORIZONTAL
         buttons.gravity = Gravity.CENTER_VERTICAL
 
         val select = android.widget.Button(context)
         select.text = "Aç"
-        select.setOnClickListener { onSelect() }
+        select.setOnClickListener {
+            onSelect()
+        }
 
         val close = BrowserTabCloseButton.create(context) {
             onClose()
