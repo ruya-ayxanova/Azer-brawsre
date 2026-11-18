@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import android.widget.Button
 
 class DownloadListActivity : Activity() {
 
@@ -16,19 +17,22 @@ class DownloadListActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        DownloadNotificationHelper.createChannel(this)
-
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
 
         val header = TextView(this).apply {
-            text = "İndirmeler"
-            textSize = 24f
-            setPadding(24, 24, 24, 24)
+            text = "Azer Browser - İndirmeler"
+            textSize = 23f
+            setPadding(24, 24, 24, 16)
         }
 
-        listView = ListView(this)
+        val refreshButton = Button(this).apply {
+            text = "Listeyi Yenile"
+            setOnClickListener {
+                refreshDownloads()
+            }
+        }
 
         emptyView = TextView(this).apply {
             text = "Henüz indirme bulunmuyor."
@@ -37,11 +41,19 @@ class DownloadListActivity : Activity() {
             visibility = View.GONE
         }
 
-        adapter = DownloadAdapter(this, mutableListOf())
+        listView = ListView(this)
+
+        adapter = DownloadAdapter(
+            this,
+            mutableListOf()
+        )
+
         listView.adapter = adapter
 
         layout.addView(header)
+        layout.addView(refreshButton)
         layout.addView(emptyView)
+
         layout.addView(
             listView,
             LinearLayout.LayoutParams(
@@ -52,11 +64,12 @@ class DownloadListActivity : Activity() {
         )
 
         setContentView(layout)
-
-        refreshDownloads()
     }
 
-    fun refreshDownloads() {
+    private fun refreshDownloads() {
+
+        DownloadIntegration.refresh(this)
+
         val downloads = DownloadRepository.getAll(this)
 
         adapter.update(downloads)
@@ -67,9 +80,6 @@ class DownloadListActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-
-        if (::adapter.isInitialized) {
-            refreshDownloads()
-        }
+        refreshDownloads()
     }
 }
