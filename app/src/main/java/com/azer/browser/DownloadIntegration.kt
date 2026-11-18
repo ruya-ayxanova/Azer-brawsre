@@ -2,9 +2,9 @@ package com.azer.browser
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.view.View
 import android.webkit.WebView
-import android.widget.Toast
 
 object DownloadIntegration {
 
@@ -37,35 +37,37 @@ object DownloadIntegration {
             contentDisposition,
             mimeType,
             contentLength
+        ) ?: return null
+
+        val fileName = DownloadUtils.getFileName(
+            url,
+            mimeType
         )
 
-        if (id != null) {
-            val fileName = DownloadUtils.getFileName(
-                url,
-                mimeType
+        DownloadRepository.add(
+            context,
+            DownloadItem(
+                id = id,
+                title = fileName,
+                url = url,
+                fileName = fileName,
+                status = DownloadStatus.PENDING,
+                totalBytes = contentLength
             )
-
-            DownloadRepository.add(
-                context,
-                DownloadItem(
-                    id = id,
-                    title = fileName,
-                    url = url,
-                    fileName = fileName,
-                    status = DownloadStatus.PENDING
-                )
-            )
-        }
+        )
 
         return id
     }
 
     fun openDownloads(activity: Activity) {
         activity.startActivity(
-            android.content.Intent(
-                activity,
-                DownloadListActivity::class.java
-            )
+            Intent(activity, DownloadListActivity::class.java)
+        )
+    }
+
+    fun openSettings(activity: Activity) {
+        activity.startActivity(
+            Intent(activity, DownloadSettingsActivity::class.java)
         )
     }
 
@@ -77,6 +79,6 @@ object DownloadIntegration {
     }
 
     fun refresh(context: Context) {
-        DownloadQueryWorker.refresh(context)
+        DownloadProgressTracker.update(context)
     }
 }
