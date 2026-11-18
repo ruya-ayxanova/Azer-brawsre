@@ -4,7 +4,6 @@ import android.app.Activity
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.LinearLayout
 import android.widget.Toast
 import com.azer.browser.download.system.DownloadRequestInfo
@@ -17,15 +16,17 @@ import com.azer.browser.ui.DownloadScreen
 import com.azer.browser.ui.HistoryScreen
 import com.azer.browser.ui.HomeScreen
 import com.azer.browser.ui.SettingsScreen
-import com.azer.browser.ui.TabScreen
+import com.azer.browser.ui.tabs.BrowserTabOverviewScreen
+import com.azer.browser.ui.tabs.BrowserTabRegistry
+import com.azer.browser.ui.tabs.BrowserTabWebViewFactory
 
 class MainActivity : Activity() {
 
     private lateinit var root: LinearLayout
     private lateinit var content: LinearLayout
-    private lateinit var webView: WebView
 
-    private var tabCount = 1
+    private val tabRegistry = BrowserTabRegistry()
+
     private var isBrowsing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,17 +39,15 @@ class MainActivity : Activity() {
         content = LinearLayout(this)
         content.orientation = LinearLayout.VERTICAL
 
-        webView = WebView(this)
+        createNewTab(false)
 
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        webView.settings.loadsImagesAutomatically = true
-        webView.settings.useWideViewPort = true
-        webView.settings.loadWithOverviewMode = true
+        showHome()
+        setContentView(root)
+    }
 
-        webView.webViewClient = WebViewClient()
+    private fun createNewTab(showOverview: Boolean = true) {
+        val webView = BrowserTabWebViewFactory.create(this)
 
-        // İnternet üzerinden dosya indirme bağlantısı
         webView.setDownloadListener {
             url,
             userAgent,
@@ -69,8 +68,7 @@ class MainActivity : Activity() {
                     cookies = cookies
                 )
 
-                val result =
-                    SystemDownloadManager(this).start(info)
+                val result = SystemDownloadManager(this).start(info)
 
                 Toast.makeText(
                     this,
@@ -79,35 +77,31 @@ class MainActivity : Activity() {
                 ).show()
 
             } catch (e: Exception) {
-
                 Toast.makeText(
                     this,
-                    "İndirme başlatılamadı: ${e.message}",
+                    "İndirme başlatılamadı",
                     Toast.LENGTH_LONG
                 ).show()
             }
         }
 
-        showHome()
-        setContentView(root)
+        tabRegistry.add(webView)
+
+        if (showOverview) {
+            showTabs()
+        }
     }
 
     private fun setupLayout() {
-
         root.removeAllViews()
 
         val toolbar = BrowserToolbar.create(
             this,
-            onSearch = { address ->
-                openAddress(address)
-            },
-            onHome = {
-                showHome()
-            }
+            onSearch = { openAddress(it) },
+            onHome = { showHome() }
         )
 
         val bottomBar = BrowserBottomBar.create(this) { selected ->
-
             when (selected) {
                 "Ana Sayfa" -> showHome()
                 "İndirilenler" -> showDownloads()
@@ -145,7 +139,6 @@ class MainActivity : Activity() {
     }
 
     private fun showContent(view: android.view.View) {
-
         content.removeAllViews()
 
         content.addView(
@@ -160,102 +153,110 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
-
         isBrowsing = false
 
         showContent(
-            HomeScreen.create(this) { address ->
-                openAddress(address)
+            HomeScreen.create(this) {
+                openAddress(it)
             }
         )
     }
 
     private fun showDownloads() {
-
         isBrowsing = false
-
-        showContent(
-            DownloadScreen.create(this)
-        )
+        showContent(DownloadScreen.create(this))
     }
 
     private fun showTabs() {
-
         isBrowsing = false
 
         showContent(
-            TabScreen.create(
-                this,
-                tabCount,
-                onNewTab = {
-                    tabCount++
-                    showHome()
-
-                    Toast.makeText(
-                        this,
-                        "Yeni sekme açıldı",
-                        Toast.LENGTH_SHORT
-                    ).show()
+            BrowserTabOverviewScreen.create(
+                context = this,
+                entries = tabRegistry.entries(),
+                onSelect = { index ->
+                    switchTab(index)
                 },
-                onPrivateTab = {
-                    Toast.makeText(
-                        this,
-                        "Gizli sekme henüz geliştirilmedi",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                onClose = { index ->
+                    closeTab(index)
+                },
+                onNewTab = {
+                    createNewTab()
                 }
             )
         )
     }
 
+    private fun switchTab(index: Int) {
+        val selected = tabRegistry.activate(index)
+
+        if (selected != null) {
+            isBrowsing = selected.url.isNotBlank()
+                && selected.url != "azer://home"
+
+            showContent(selected)
+        } else {
+            showHome()
+        }
+    }
+
+    private fun closeTab(index: Int) {
+        val removed = tabRegistry.close(index)
+
+        removed?.let {
+            it.stopLoading()
+            it.destroy()
+        }
+
+        if (tabRegistry.count == 0) {
+            createNewTab(false)
+            showHome()
+            return
+        }
+
+        val active = tabRegistry.getActive()
+
+        if (active != null) {
+            isBrowsing = active.url.isNotBlank()
+                && active.url != "azer://home"
+            showContent(active)
+        } else {
+            showTabs()
+        }
+    }
+
     private fun showBookmarks() {
-
         isBrowsing = false
-
-        showContent(
-            BookmarkScreen.create(this)
-        )
+        showContent(BookmarkScreen.create(this))
     }
 
     private fun showHistory() {
-
         isBrowsing = false
-
-        showContent(
-            HistoryScreen.create(this)
-        )
+        showContent(HistoryScreen.create(this))
     }
 
     private fun showSettings() {
-
         isBrowsing = false
-
-        showContent(
-            SettingsScreen.create(this)
-        )
+        showContent(SettingsScreen.create(this))
     }
 
     private fun openAddress(input: String) {
-
         val value = input.trim()
 
         if (value.isEmpty()) {
             Toast.makeText(
                 this,
-                "Adres veya arama yaz",
+                "Adres gir",
                 Toast.LENGTH_SHORT
             ).show()
             return
         }
 
         val url = when {
-
             value.startsWith("https://", true) ||
-            value.startsWith("http://", true) ->
-                value
+            value.startsWith("http://", true) -> value
 
-            value.contains(".") &&
-            !value.contains(" ") ->
+            value.contains(".") && !value.contains(" ") ->
                 "https://$value"
 
             else ->
@@ -263,34 +264,47 @@ class MainActivity : Activity() {
                     android.net.Uri.encode(value)
         }
 
+        var webView = tabRegistry.getActive()
+
+        if (webView == null) {
+            createNewTab(false)
+            webView = tabRegistry.getActive()
+        }
+
+        webView ?: return
+
+        val index = tabRegistry.activeIndex()
+
+        tabRegistry.setUrl(index, url)
+
         isBrowsing = true
 
         webView.loadUrl(url)
 
         showContent(webView)
 
-        // Geçmişe kaydet
         val preferences = getSharedPreferences(
             "azer_history",
             MODE_PRIVATE
         )
 
-        val oldItems = preferences
+        val items = preferences
             .getStringSet("items", emptySet())
             ?.toMutableSet()
             ?: mutableSetOf()
 
-        oldItems.add(url)
+        items.add(url)
 
         preferences.edit()
-            .putStringSet("items", oldItems)
+            .putStringSet("items", items)
             .apply()
     }
 
     @Deprecated("Deprecated Android callback")
     override fun onBackPressed() {
+        val webView = tabRegistry.getActive()
 
-        if (isBrowsing && webView.canGoBack()) {
+        if (isBrowsing && webView != null && webView.canGoBack()) {
             webView.goBack()
         } else {
             showHome()
@@ -298,10 +312,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-
-        webView.stopLoading()
-        webView.destroy()
-
+        tabRegistry.clear()
         super.onDestroy()
     }
 }
