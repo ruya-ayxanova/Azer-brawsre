@@ -2,9 +2,12 @@ package com.azer.browser
 
 import android.app.Activity
 import android.os.Bundle
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.Toast
 import com.azer.browser.download.system.DownloadRequestInfo
 import com.azer.browser.download.system.SystemDownloadManager
@@ -19,15 +22,25 @@ import com.azer.browser.ui.SettingsScreen
 import com.azer.browser.ui.tabs.BrowserTabOverviewScreen
 import com.azer.browser.ui.tabs.BrowserTabRegistry
 import com.azer.browser.ui.tabs.BrowserTabWebViewFactory
+import com.azer.browser.ui.navigation.BrowserNavigationBar
+import com.azer.browser.ui.navigation.BrowserProgressView
+import com.azer.browser.ui.navigation.BrowserLoadingController
+import com.azer.browser.ui.navigation.BrowserTitleFormatter
+import com.azer.browser.ui.navigation.BrowserErrorView
+import com.azer.browser.ui.navigation.BrowserWebChromeClient
+import com.azer.browser.ui.navigation.BrowserPageListener
 
-class MainActivity : Activity() {
+class MainActivity : Activity(), BrowserPageListener {
 
     private lateinit var root: LinearLayout
     private lateinit var content: LinearLayout
+    private lateinit var progressBar: ProgressBar
+    private lateinit var loadingController: BrowserLoadingController
 
     private val tabRegistry = BrowserTabRegistry()
 
     private var isBrowsing = false
+    private var lastErrorUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +52,9 @@ class MainActivity : Activity() {
         content = LinearLayout(this)
         content.orientation = LinearLayout.VERTICAL
 
+        progressBar = BrowserProgressView.create(this)
+        loadingController = BrowserLoadingController(progressBar)
+
         createNewTab(false)
 
         showHome()
@@ -47,6 +63,43 @@ class MainActivity : Activity() {
 
     private fun createNewTab(showOverview: Boolean = true) {
         val webView = BrowserTabWebViewFactory.create(this)
+
+        webView.webViewClient = object : WebViewClient() {
+
+            override fun onPageStarted(
+                view: WebView,
+                url: String,
+                favicon: android.graphics.Bitmap?
+            ) {
+                lastErrorUrl = null
+                onPageStarted(url)
+            }
+
+            override fun onPageFinished(
+                view: WebView,
+                url: String
+            ) {
+                onPageFinished(
+                    url,
+                    view.title.orEmpty()
+                )
+            }
+
+            override fun onReceivedError(
+                view: WebView,
+                request: android.webkit.WebResourceRequest,
+                error: android.webkit.WebResourceError
+            ) {
+                if (request.isForMainFrame) {
+                    onPageError(
+                        request.url.toString(),
+                        error.description.toString()
+                    )
+                }
+            }
+        }
+
+        webView.webChromeClient = BrowserWebChromeClient(this)
 
         webView.setDownloadListener {
             url,
@@ -61,11 +114,11 @@ class MainActivity : Activity() {
                     .getCookie(url)
 
                 val info = DownloadRequestInfo(
-                    url = url,
-                    userAgent = userAgent,
-                    contentDisposition = contentDisposition,
-                    mimeType = mimeType,
-                    cookies = cookies
+                    url,
+                    userAgent,
+                    contentDisposition,
+                    mimeType,
+                    cookies
                 )
 
                 val result = SystemDownloadManager(this).start(info)
@@ -87,9 +140,7 @@ class MainActivity : Activity() {
 
         tabRegistry.add(webView)
 
-        if (showOverview) {
-            showTabs()
-        }
+        if (showOverview) showTabs()
     }
 
     private fun setupLayout() {
@@ -99,6 +150,40 @@ class MainActivity : Activity() {
             this,
             onSearch = { openAddress(it) },
             onHome = { showHome() }
+        )
+
+        val activeWebView = tabRegistry.getActive()
+
+        val navigationBar = BrowserNavigationBar.create(
+            this,
+            onBack = {
+                activeWebView?.let {
+                    if (!it.canGoBack()) {
+                        Toast.makeText(
+                            this,
+                            "Geri sayfa yok",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        it.goBack()
+                    }
+                }
+            },
+            onForward = {
+                activeWebView?.let {
+                    if (it.canGoForward()) it.goForward()
+                }
+            },
+            onReload = {
+                activeWebView?.reload()
+            },
+            onStop = {
+                activeWebView?.stopLoading()
+                loadingController.finish()
+            },
+            onHome = {
+                showHome()
+            }
         )
 
         val bottomBar = BrowserBottomBar.create(this) { selected ->
@@ -121,6 +206,22 @@ class MainActivity : Activity() {
         )
 
         root.addView(
+            navigationBar,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                48
+            )
+        )
+
+        root.addView(
+            progressBar,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                4
+            )
+        )
+
+        root.addView(
             content,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -138,7 +239,7 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun showContent(view: android.view.View) {
+    private fun showContent(view: View) {
         content.removeAllViews()
 
         content.addView(
@@ -154,6 +255,7 @@ class MainActivity : Activity() {
 
     private fun showHome() {
         isBrowsing = false
+        loadingController.finish()
 
         showContent(
             HomeScreen.create(this) {
@@ -172,29 +274,23 @@ class MainActivity : Activity() {
 
         showContent(
             BrowserTabOverviewScreen.create(
-                context = this,
-                entries = tabRegistry.entries(),
-                onSelect = { index ->
-                    switchTab(index)
-                },
-                onClose = { index ->
-                    closeTab(index)
-                },
-                onNewTab = {
-                    createNewTab()
-                }
+                this,
+                tabRegistry.entries(),
+                onSelect = { switchTab(it) },
+                onClose = { closeTab(it) },
+                onNewTab = { createNewTab() }
             )
         )
     }
 
     private fun switchTab(index: Int) {
-        val selected = tabRegistry.activate(index)
+        val webView = tabRegistry.activate(index)
 
-        if (selected != null) {
-            isBrowsing = selected.url.isNotBlank()
-                && selected.url != "azer://home"
+        if (webView != null) {
+            isBrowsing = !webView.url.isNullOrBlank()
+                && webView.url != "azer://home"
 
-            showContent(selected)
+            showContent(webView)
         } else {
             showHome()
         }
@@ -214,15 +310,11 @@ class MainActivity : Activity() {
             return
         }
 
-        val active = tabRegistry.getActive()
-
-        if (active != null) {
-            isBrowsing = active.url.isNotBlank()
-                && active.url != "azer://home"
-            showContent(active)
-        } else {
-            showTabs()
-        }
+        tabRegistry.getActive()?.let {
+            isBrowsing = !it.url.isNullOrBlank()
+                && it.url != "azer://home"
+            showContent(it)
+        } ?: showTabs()
     }
 
     private fun showBookmarks() {
@@ -274,13 +366,14 @@ class MainActivity : Activity() {
         webView ?: return
 
         val index = tabRegistry.activeIndex()
-
         tabRegistry.setUrl(index, url)
 
         isBrowsing = true
+        lastErrorUrl = null
+
+        loadingController.start()
 
         webView.loadUrl(url)
-
         showContent(webView)
 
         val preferences = getSharedPreferences(
@@ -298,6 +391,50 @@ class MainActivity : Activity() {
         preferences.edit()
             .putStringSet("items", items)
             .apply()
+    }
+
+    override fun onPageStarted(url: String) {
+        runOnUiThread {
+            isBrowsing = true
+            lastErrorUrl = null
+            loadingController.start()
+
+            val index = tabRegistry.activeIndex()
+            tabRegistry.setUrl(index, url)
+        }
+    }
+
+    override fun onPageFinished(url: String, title: String) {
+        runOnUiThread {
+            val index = tabRegistry.activeIndex()
+
+            tabRegistry.setUrl(index, url)
+            tabRegistry.setTitle(
+                index,
+                BrowserTitleFormatter.format(title, url)
+            )
+
+            loadingController.finish()
+        }
+    }
+
+    override fun onProgressChanged(progress: Int) {
+        runOnUiThread {
+            loadingController.update(progress)
+        }
+    }
+
+    override fun onPageError(url: String, message: String) {
+        runOnUiThread {
+            lastErrorUrl = url
+            loadingController.finish()
+
+            Toast.makeText(
+                this,
+                "Sayfa yüklenirken hata oluştu",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     @Deprecated("Deprecated Android callback")
