@@ -11,6 +11,11 @@ class DownloadBroadcastReceiver : BroadcastReceiver() {
         context: Context,
         intent: Intent
     ) {
+
+        if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
+            return
+        }
+
         val id = intent.getLongExtra(
             DownloadManager.EXTRA_DOWNLOAD_ID,
             -1L
@@ -18,17 +23,18 @@ class DownloadBroadcastReceiver : BroadcastReceiver() {
 
         if (id == -1L) return
 
-        val item = DownloadManagerHelper.query(context, id)
+        val result = DownloadManagerHelper.query(context, id)
             ?: return
 
-        DownloadRepository.update(
-            context,
-            item.copy(
-                status = DownloadStatus.COMPLETED,
-                progress = 100
-            )
+        val previous = DownloadRepository.find(context, id)
+
+        val updated = result.copy(
+            title = previous?.title ?: result.title,
+            url = previous?.url ?: result.url,
+            fileName = previous?.fileName ?: result.fileName,
+            status = result.status
         )
 
-        DownloadNotificationHelper.createChannel(context)
+        DownloadRepository.update(context, updated)
     }
 }
