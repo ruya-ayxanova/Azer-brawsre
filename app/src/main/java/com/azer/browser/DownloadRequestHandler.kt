@@ -1,8 +1,10 @@
 package com.azer.browser
 
+import android.app.DownloadManager
 import android.content.Context
+import android.net.Uri
+import android.os.Environment
 import android.webkit.CookieManager
-import android.webkit.URLUtil
 import android.widget.Toast
 
 object DownloadRequestHandler {
@@ -21,32 +23,48 @@ object DownloadRequestHandler {
             return null
         }
 
-        return try {
-            val cookies = CookieManager.getInstance()
-                .getCookie(url)
+        if (!DownloadPolicy.canDownload(context)) {
+            Toast.makeText(
+                context,
+                "İndirme için Wi-Fi bağlantısı gerekli.",
+                Toast.LENGTH_LONG
+            ).show()
+            return null
+        }
 
-            val fileName = URLUtil.guessFileName(
-                url,
-                contentDisposition,
-                mimeType
+        return try {
+
+            val fileName = DownloadUtils.sanitizeFileName(
+                android.webkit.URLUtil.guessFileName(
+                    url,
+                    contentDisposition,
+                    mimeType
+                )
             )
+
+            val cookies = CookieManager.getInstance().getCookie(url)
 
             val manager = context.getSystemService(
                 Context.DOWNLOAD_SERVICE
-            ) as android.app.DownloadManager
+            ) as DownloadManager
 
-            val request = android.app.DownloadManager.Request(
-                android.net.Uri.parse(url)
+            val request = DownloadManager.Request(
+                Uri.parse(url)
             ).apply {
+
                 setTitle(fileName)
                 setDescription("Azer Browser indiriyor")
                 setMimeType(mimeType)
+
                 setNotificationVisibility(
-                    android.app.DownloadManager.Request
-                        .VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                    if (DownloadSettings.getNotificationEnabled(context)) {
+                        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                    } else {
+                        DownloadManager.Request.VISIBILITY_HIDDEN
+                    }
                 )
 
-                if (!userAgent.isNullOrBlank()) {
+                if (userAgent.isNotBlank()) {
                     addRequestHeader("User-Agent", userAgent)
                 }
 
@@ -55,14 +73,18 @@ object DownloadRequestHandler {
                 }
 
                 setDestinationInExternalPublicDir(
-                    android.os.Environment.DIRECTORY_DOWNLOADS,
+                    Environment.DIRECTORY_DOWNLOADS,
                     "AzerBrowser/$fileName"
                 )
+
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(false)
             }
 
             manager.enqueue(request)
 
         } catch (e: Exception) {
+
             Toast.makeText(
                 context,
                 "İndirme hatası: ${e.message}",
