@@ -2,12 +2,13 @@ package com.azer.browser
 
 import android.app.Activity
 import android.os.Bundle
-import android.view.View
+import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
+import com.azer.browser.download.system.DownloadRequestInfo
+import com.azer.browser.download.system.SystemDownloadManager
 import com.azer.browser.ui.BookmarkScreen
 import com.azer.browser.ui.BrowserBottomBar
 import com.azer.browser.ui.BrowserTheme
@@ -38,26 +39,75 @@ class MainActivity : Activity() {
         content.orientation = LinearLayout.VERTICAL
 
         webView = WebView(this)
+
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
+        webView.settings.loadsImagesAutomatically = true
+        webView.settings.useWideViewPort = true
+        webView.settings.loadWithOverviewMode = true
+
         webView.webViewClient = WebViewClient()
+
+        // İnternet üzerinden dosya indirme bağlantısı
+        webView.setDownloadListener {
+            url,
+            userAgent,
+            contentDisposition,
+            mimeType,
+            _ ->
+
+            try {
+                val cookies = CookieManager
+                    .getInstance()
+                    .getCookie(url)
+
+                val info = DownloadRequestInfo(
+                    url = url,
+                    userAgent = userAgent,
+                    contentDisposition = contentDisposition,
+                    mimeType = mimeType,
+                    cookies = cookies
+                )
+
+                val result =
+                    SystemDownloadManager(this).start(info)
+
+                Toast.makeText(
+                    this,
+                    "${result.fileName} indiriliyor",
+                    Toast.LENGTH_LONG
+                ).show()
+
+            } catch (e: Exception) {
+
+                Toast.makeText(
+                    this,
+                    "İndirme başlatılamadı: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
 
         showHome()
         setContentView(root)
     }
 
     private fun setupLayout() {
+
         root.removeAllViews()
 
         val toolbar = BrowserToolbar.create(
             this,
-            onSearch = { address -> openAddress(address) },
-            onHome = { showHome() }
+            onSearch = { address ->
+                openAddress(address)
+            },
+            onHome = {
+                showHome()
+            }
         )
 
-        val bottomBar = BrowserBottomBar.create(
-            this
-        ) { selected ->
+        val bottomBar = BrowserBottomBar.create(this) { selected ->
+
             when (selected) {
                 "Ana Sayfa" -> showHome()
                 "İndirilenler" -> showDownloads()
@@ -94,8 +144,10 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun showContent(view: View) {
+    private fun showContent(view: android.view.View) {
+
         content.removeAllViews()
+
         content.addView(
             view,
             LinearLayout.LayoutParams(
@@ -103,11 +155,14 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams.MATCH_PARENT
             )
         )
+
         setupLayout()
     }
 
     private fun showHome() {
+
         isBrowsing = false
+
         showContent(
             HomeScreen.create(this) { address ->
                 openAddress(address)
@@ -116,12 +171,18 @@ class MainActivity : Activity() {
     }
 
     private fun showDownloads() {
+
         isBrowsing = false
-        showContent(DownloadScreen.create(this))
+
+        showContent(
+            DownloadScreen.create(this)
+        )
     }
 
     private fun showTabs() {
+
         isBrowsing = false
+
         showContent(
             TabScreen.create(
                 this,
@@ -129,16 +190,17 @@ class MainActivity : Activity() {
                 onNewTab = {
                     tabCount++
                     showHome()
+
                     Toast.makeText(
                         this,
-                        "Yeni sekme oluşturuldu.",
+                        "Yeni sekme açıldı",
                         Toast.LENGTH_SHORT
                     ).show()
                 },
                 onPrivateTab = {
                     Toast.makeText(
                         this,
-                        "Gizli sekme sonraki aşamada geliştirilecek.",
+                        "Gizli sekme henüz geliştirilmedi",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -147,58 +209,76 @@ class MainActivity : Activity() {
     }
 
     private fun showBookmarks() {
+
         isBrowsing = false
-        showContent(BookmarkScreen.create(this))
+
+        showContent(
+            BookmarkScreen.create(this)
+        )
     }
 
     private fun showHistory() {
+
         isBrowsing = false
-        showContent(HistoryScreen.create(this))
+
+        showContent(
+            HistoryScreen.create(this)
+        )
     }
 
     private fun showSettings() {
+
         isBrowsing = false
-        showContent(SettingsScreen.create(this))
+
+        showContent(
+            SettingsScreen.create(this)
+        )
     }
 
     private fun openAddress(input: String) {
+
         val value = input.trim()
 
         if (value.isEmpty()) {
             Toast.makeText(
                 this,
-                "Adres gir.",
+                "Adres veya arama yaz",
                 Toast.LENGTH_SHORT
             ).show()
             return
         }
 
-        val url = if (
-            value.startsWith("http://") ||
-            value.startsWith("https://")
-        ) {
-            value
-        } else if (value.contains(".") && !value.contains(" ")) {
-            "https://$value"
-        } else {
-            "https://www.google.com/search?q=" +
-                android.net.Uri.encode(value)
+        val url = when {
+
+            value.startsWith("https://", true) ||
+            value.startsWith("http://", true) ->
+                value
+
+            value.contains(".") &&
+            !value.contains(" ") ->
+                "https://$value"
+
+            else ->
+                "https://www.google.com/search?q=" +
+                    android.net.Uri.encode(value)
         }
 
         isBrowsing = true
 
         webView.loadUrl(url)
+
         showContent(webView)
 
+        // Geçmişe kaydet
         val preferences = getSharedPreferences(
             "azer_history",
             MODE_PRIVATE
         )
 
-        val oldItems = preferences.getStringSet(
-            "items",
-            emptySet()
-        )?.toMutableSet() ?: mutableSetOf()
+        val oldItems = preferences
+            .getStringSet("items", emptySet())
+            ?.toMutableSet()
+            ?: mutableSetOf()
 
         oldItems.add(url)
 
@@ -207,7 +287,9 @@ class MainActivity : Activity() {
             .apply()
     }
 
+    @Deprecated("Deprecated Android callback")
     override fun onBackPressed() {
+
         if (isBrowsing && webView.canGoBack()) {
             webView.goBack()
         } else {
@@ -216,7 +298,10 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+
+        webView.stopLoading()
         webView.destroy()
+
         super.onDestroy()
     }
 }
