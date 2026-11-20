@@ -1,62 +1,40 @@
-
 package com.azer.browser
 
 import android.content.Context
-import android.graphics.Color
 import android.view.View
 import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 
 class BookmarkListView(
     context: Context,
     private val onOpen: (Bookmark) -> Unit,
-    private val onMore: (Bookmark) -> Unit
-) : ScrollView(context) {
-
-    private val list = LinearLayout(context)
+    private val onBookmarkMenu: (Bookmark, View) -> Unit
+) : LinearLayout(context) {
 
     init {
-        isFillViewport = true
-        setBackgroundColor(Color.rgb(245, 247, 245))
-
-        list.orientation = LinearLayout.VERTICAL
-        list.setPadding(12, 12, 12, 12)
-
-        addView(list)
+        orientation = VERTICAL
     }
 
-    fun showBookmarks(items: List<Bookmark>) {
-        list.removeAllViews()
+    fun setBookmarks(bookmarks: List<Bookmark>) {
+        removeAllViews()
 
-        if (items.isEmpty()) {
-            val empty = TextView(context).apply {
-                text = "Bu klasörde henüz yer imi yok."
-                textSize = 14f
-                setTextColor(Color.GRAY)
-                setPadding(12, 24, 12, 24)
-            }
-
-            list.addView(empty)
-            return
-        }
-
-        items.forEach { bookmark ->
+        bookmarks.forEach { bookmark ->
             val item = BookmarkItemView(
                 context,
-                bookmark,
                 onOpen,
-                onMore
+                { selectedBookmark, anchor ->
+                    onBookmarkMenu(selectedBookmark, anchor)
+                }
             )
 
-            val params = LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT,
-                LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = 8
-            }
+            item.bind(bookmark)
 
-            list.addView(item, params)
+            addView(
+                item,
+                LayoutParams(
+                    LayoutParams.MATCH_PARENT,
+                    LayoutParams.WRAP_CONTENT
+                )
+            )
         }
     }
 }
